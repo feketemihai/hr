@@ -20,21 +20,20 @@
 #
 ##############################################################################
 
+from openerp import models, fields, api, _
+from openerp.exceptions import Warning
 
 
-
-class hr_contract(orm.Model):
-
+class hr_contract(models.Model):
     _inherit = 'hr.contract'
 
-    def _get_wage(self, cr, uid, context=None, job_id=None):
-
+    @api.one
+    def _get_wage(self, job_id=None):
         res = 0
         default = 0
-        init = self.get_latest_initial_values(cr, uid, context=context)
+        init = self.get_latest_initial_values()
         if job_id:
-            catdata = self.pool.get('hr.job').read(
-                cr, uid, job_id, ['category_ids'], context=context)
+            catdata = self.env['hr.job'].browse(job_id).category_ids
         else:
             catdata = False
         if init is not None:
@@ -44,9 +43,9 @@ class hr_contract(orm.Model):
                 elif catdata:
                     cat_id = False
                     category_ids = [c.id for c in line.category_ids]
-                    for ci in catdata['category_ids']:
-                        if ci in category_ids:
-                            cat_id = ci
+                    for ci in catdata:
+                        if ci.id in category_ids:
+                            cat_id = ci.id
                             break
                     if cat_id:
                         res = line.starting_wage
@@ -54,82 +53,77 @@ class hr_contract(orm.Model):
                     default = line.starting_wage
                 if res != 0:
                     break
-        if res == 0:
-            res = default
-        return res
+        self.wage = res != 0 and res or default
 
-    def _get_struct(self, cr, uid, context=None):
-
+    @api.one
+    def _get_struct(self):
         res = False
-        init = self.get_latest_initial_values(cr, uid, context=context)
+        init = self.get_latest_initial_values()
         if init is not None and init.struct_id:
             res = init.struct_id.id
-        return res
+        self.struct_id = res
 
+    @api.one
     def _get_trial_date_start(self, cr, uid, context=None):
 
         res = False
-        init = self.get_latest_initial_values(cr, uid, context=context)
+        init = self.get_latest_initial_values()
         if init is not None and init.trial_period and init.trial_period > 0:
-            res = datetime.now().strftime(OE_DFORMAT)
-        return res
+            res = fields.Date.today()
+        self.trial_date_start = res
 
+    @api.one
     def _get_trial_date_end(self, cr, uid, context=None):
 
         res = False
         init = self.get_latest_initial_values(cr, uid, context=context)
         if init is not None and init.trial_period and init.trial_period > 0:
-            dEnd = datetime.now().date() + timedelta(days=init.trial_period)
-            res = dEnd.strftime(OE_DFORMAT)
-        return res
+            res = fields.Date.today() + timedelta(days=init.trial_period)
+        self.trial_date_end = res
 
-    _defaults = {
-        'wage': _get_wage,
-        'struct_id': _get_struct,
-        'trial_date_start': _get_trial_date_start,
-        'trial_date_end': _get_trial_date_end,
-    }
+    wage = fields.Float(string='Wage',
+                        default="_get_wage",
+                        digits_compute=dp.get_precision('Payroll'),
+                        required=True,
+                        help="Basic Salary of the employee")
+    struct_id = fields.Many2one('hr.payroll.structure',
+                                string='Salary Structure',
+                                default="_get_struct")
+    trial_date_start = fields.Date(string='Trial Start Date',
+                                   default="_get_trial_date_start")
+    trial_date_end = fields.Date(string='Trial End Date',
+                                 default="_get_trial_date_end")
 
-    def onchange_job(self, cr, uid, ids, job_id, context=None):
+    @api.onchange('job_id')
+    def onchange_job(self):
+        self.ensure_one()
+        if self.job_id:
+            self.wage = self._get_wage(job_id=self.job_id)
 
-        res = False
-        if job_id:
-            wage = self._get_wage(cr, uid, context=context, job_id=job_id)
-            res = {'value': {'wage': wage}}
-        return res
-
-    def onchange_trial(self, cr, uid, ids, trial_date_start, context=None):
-
-        res = {'value': {'trial_date_end': False}}
-
-        init = self.get_latest_initial_values(cr, uid, context=context)
+    @api.onchange('trial_date_start')
+    def onchange_trial(self):
+        self.ensure_one()
+        init = self.get_latest_initial_values()
         if init is not None and init.trial_period and init.trial_period > 0:
-            dStart = datetime.strptime(trial_date_start, OE_DFORMAT)
-            dEnd = dStart + timedelta(days=init.trial_period)
-            res['value']['trial_date_end'] = dEnd.strftime(OE_DFORMAT)
+            self.trial_date_end = self.trial_date_start + \
+                                  timedelta(days=init.trial_period)
 
-        return res
-
-    def get_latest_initial_values(self, cr, uid, today_str=None, context=None):
+    @api.multi
+    @api.returns('hr.contract.init')
+    def get_latest_initial_values(self, date=None):
         """Return a record with an effective date before today_str
         but greater than all others
         """
-
-        init_obj = self.pool.get('hr.contract.init')
-        if today_str is None:
-            today_str = datetime.now().strftime(OE_DFORMAT)
-        dToday = datetime.strptime(today_str, OE_DFORMAT).date()
-
+        init_obj = self.env['hr.contract.init']
+        if date is None:
+            date = fields.Date.today()
         res = None
-        ids = init_obj.search(
-            cr, uid, [('date', '<=', today_str), ('state', '=', 'approve')],
-            context=context)
-        for init in init_obj.browse(cr, uid, ids, context=context):
-            d = datetime.strptime(init.date, OE_DFORMAT).date()
-            if d <= dToday:
+        init_ids = init_obj.search([('date', '<=', date),
+                                    ('state', '=', 'approve')])
+        for init in init_ids:
+            if init.date <= date:
                 if res is None:
                     res = init
-                elif d > datetime.strptime(res.date, OE_DFORMAT).date():
+                elif init.date > res.date:
                     res = init
-
         return res

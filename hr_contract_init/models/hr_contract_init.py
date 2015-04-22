@@ -20,157 +20,98 @@
 #
 ##############################################################################
 
-from datetime import datetime, timedelta
-
-from openerp import models, fields, api, exceptions, _
-
-from openerp import netsvc
-from openerp.addons import decimal_precision as dp
 from openerp import models, fields, api, _
-from openerp.tools import DEFAULT_SERVER_DATE_FORMAT as OE_DFORMAT
-from openerp.tools.translate import _
+from openerp.exceptions import Warning
+import openerp.addons.decimal_precision as dp
 
 
-class contract_init(orm.Model):
-
+class contract_init(models.Model):
     _name = 'hr.contract.init'
     _description = 'Initial Contract Settings'
 
     _inherit = 'ir.needaction_mixin'
 
-    _columns = {
-        'name': fields.char(
-            'Name',
-            size=64,
-            required=True,
-            readonly=True,
-            states={'draft': [('readonly', False)]},
-        ),
-        'date': fields.date(
-            'Effective Date',
-            required=True,
-            readonly=True,
-            states={'draft': [('readonly', False)]},
-        ),
-        'wage_ids': fields.one2many(
-            'hr.contract.init.wage',
-            'contract_init_id',
-            'Starting Wages', readonly=True,
-            states={'draft': [('readonly', False)]},
-        ),
-        'struct_id': fields.many2one(
-            'hr.payroll.structure',
-            'Payroll Structure',
-            readonly=True,
-            states={'draft': [('readonly', False)]},
-        ),
-        'trial_period': fields.integer(
-            'Trial Period',
-            readonly=True,
-            states={'draft': [('readonly', False)]},
-            help="Length of Trial Period, in days",
-        ),
-        'active': fields.boolean(
-            'Active',
-        ),
-        'state': fields.selection(
-            [
-                ('draft', 'Draft'),
-                ('approve', 'Approved'),
-                ('decline', 'Declined'),
-            ],
-            'State',
-            readonly=True,
-        ),
-    }
-
-    _defaults = {
-        'trial_period': 0,
-        'active': True,
-        'state': 'draft',
-    }
+    name = fields.Char(string='Name', required=True, readonly=True,
+                       states={'draft': [('readonly', False)]})
+    date = fields.Date(string='Effective Date', required=True,
+                       readonly=True,
+                       states={'draft': [('readonly', False)]})
+    wage_ids = fields.One2many('hr.contract.init.wage', 'contract_init_id',
+                               string='Starting Wages', readonly=True,
+                               states={'draft': [('readonly', False)]})
+    struct_id = fields.Many2one('hr.payroll.structure',
+                                string='Payroll Structure',
+                                readonly=True,
+                                states={'draft': [('readonly', False)]})
+    trial_period = fields.Integer(string='Trial Period', readonly=True,
+                                  states={'draft': [('readonly', False)]},
+                                  default=0,
+                                  help="Length of Trial Period, in days")
+    active = fields.Boolean(string='Active', default=True)
+    state = fields.Selection([('draft', 'Draft'),
+                              ('approve', 'Approved'),
+                              ('decline', 'Declined')],
+                             string='State',
+                             readonly=True,
+                             default='draft')
 
     # Return records with latest date first
     _order = 'date desc'
 
-    def _needaction_domain_get(self, cr, uid, context=None):
-
-        users_obj = self.pool.get('res.users')
-
-        if users_obj.has_group(cr, uid, 'base.group_hr_director'):
+    @api.model
+    def _needaction_domain_get(self):
+        if self.env.user.has_group('base.group_hr_director'):
             domain = [('state', 'in', ['draft'])]
             return domain
-
         return False
 
-    def unlink(self, cr, uid, ids, context=None):
+    @api.multi
+    def unlink(self):
+        for contract in self:
+            if contract.state in ['approve', 'decline']:
+                raise Warning(_('You may not a delete a record that is not '
+                                'in a "Draft" state'))
+        return super(contract_init, self).unlink()
 
-        if isinstance(ids, (int, long)):
-            ids = [ids]
-        data = self.read(cr, uid, ids, ['state'], context=context)
-        for d in data:
-            if d['state'] in ['approve', 'decline']:
-                raise orm.except_orm(
-                    _('Error'),
-                    _('You may not a delete a record that is not in a '
-                      '"Draft" state')
-                )
-        return super(contract_init, self).unlink(cr, uid, ids, context=context)
-
-    def set_to_draft(self, cr, uid, ids, context=None):
-        self.write(cr, uid, ids, {
-            'state': 'draft',
-        }, context=context)
-        wf_service = netsvc.LocalService("workflow")
-        for i in ids:
-            wf_service.trg_delete(uid, 'hr.contract.init', i, cr)
-            wf_service.trg_create(uid, 'hr.contract.init', i, cr)
+    @api.multi
+    def set_to_draft(self):
+        self.write({'state': 'draft'})
+        self.delete_workflow()
+        self.create_workflow()
         return True
 
-    def state_approve(self, cr, uid, ids, context=None):
-
-        self.write(cr, uid, ids, {'state': 'approve'}, context=context)
+    @api.multi
+    def state_approve(self):
+        self.write({'state': 'approve'})
         return True
 
-    def state_decline(self, cr, uid, ids, context=None):
-
-        self.write(cr, uid, ids, {'state': 'decline'}, context=context)
+    @api.multi
+    def state_decline(self):
+        self.write({'state': 'decline'})
         return True
 
 
-class init_wage(orm.Model):
-
+class init_wage(models.Model):
     _name = 'hr.contract.init.wage'
     _description = 'Starting Wages'
 
-    _columns = {
-        'job_id': fields.many2one(
-            'hr.job',
-            'Job',
-        ),
-        'starting_wage': fields.float(
-            'Starting Wage',
-            digits_compute=dp.get_precision('Payroll'),
-            required=True
-        ),
-        'is_default': fields.boolean(
-            'Use as Default',
-            help="Use as default wage",
-        ),
-        'contract_init_id': fields.many2one(
-            'hr.contract.init',
-            'Contract Settings',
-        ),
-        'category_ids': fields.many2many(
-            'hr.employee.category',
-            'contract_init_category_rel',
-            'contract_init_id',
-            'category_id',
-            'Tags',
-        ),
-    }
+    job_id = fields.Many2one('hr.job', string='Job')
+    starting_wage = fields.Float(string='Starting Wage',
+                                 digits_compute=dp.get_precision('Payroll'),
+                                 required=True),
+    is_default = fields.Boolean(string='Use as Default',
+                                help="Use as default wage")
+    contract_init_id = fields.Many2one('hr.contract.init',
+                                       string='Contract Settings')
+    category_ids = fields.Many2many('hr.employee.category',
+                                    'contract_init_category_rel',
+                                    'contract_init_id',
+                                    'category_id',
+                                    string='Tags')
 
-    def _rec_message(self, cr, uid, ids, context=None):
+    @api.multi
+    def _rec_message(self):
+        self.ensure_one()
         return _('A Job Position cannot be referenced more than once in a '
                  'Contract Settings record.')
 
@@ -178,21 +119,12 @@ class init_wage(orm.Model):
         ('unique_job_cinit', 'UNIQUE(job_id,contract_init_id)', _rec_message),
     ]
 
-    def unlink(self, cr, uid, ids, context=None):
-
-        if isinstance(ids, (int, long)):
-            ids = [ids]
-        data = self.read(cr, uid, ids, ['contract_init_id'], context=context)
-        for d in data:
+    @api.multi
+    def unlink(self):
+        for wage in self:
             if not d.get('contract_init_id', False):
                 continue
-            d2 = self.pool.get(
-                'hr.contract.init').read(cr, uid, d['contract_init_id'][0],
-                                         ['state'], context=context)
-            if d2['state'] in ['approve', 'decline']:
-                raise orm.except_orm(
-                    _('Error'),
-                    _('You may not a delete a record that is not in a '
-                      '"Draft" state')
-                )
-        return super(init_wage, self).unlink(cr, uid, ids, context=context)
+            if wage.contract_init_id.state in ['approve', 'decline']:
+                raise Warning(_('You may not a delete a record that is not '
+                                'in a "Draft" state'))
+        return super(init_wage, self).unlink()
