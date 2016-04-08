@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<openerp>
+    <data>
+        <record model="ir.ui.view" id="edit_holiday_new_legal">
+            <field name="name">Leave Request</field>
+            <field name="model">hr.holidays</field>
+            <field name="inherit_id" ref="hr_holidays.edit_holiday_new"/>
+            <field name="arch" type="xml">
+                <field name="notes" position="before">
+                    <field name="legal_acknowledge" position="attributes">
+							 <attribute name="attrs">{'invisible': [('holiday_status_id','!=','Legal'),('type','!=','remove')]}</attribute>
+							 <attribute name="placeholder">I'm aware of the Labor Code, 
+											 Title 3, Chapter 3, Section 1, Art. 148, paragraph 5 
+											 on performing in a calendar year at least 10 days of 
+											 uninterrupted leave</attribute>
+
+						</field>
+				</field>
+            </field>
+        </record>
+        <record model="ir.ui.view" id="edit_holiday_new_legal">
+            <field name="name">Leave Request</field>
+            <field name="model">hr.holidays</field>
+            <field name="inherit_id" ref="hr_holidays.edit_holiday_new"/>
+            <field name="arch" type="xml">
+                <field name="notes" position="before">
+                    <field name="legal_acknowledge" position="attributes">
+							 <attribute name="attrs">{'invisible': [('holiday_status_id','ilike','Legal'),('type','!=','remove')]}</attribute>
+							 <attribute name="placeholder">I'm aware of the Labor Code, 
+											 Title 3, Chapter 3, Section 1, Art. 148, paragraph 5 
+											 on performing in a calendar year at least 10 days of 
+											 uninterrupted leave</attribute>
+
+						</field>
+				</field>
+            </field>
+        </record>
+    </data>
+</openerp>
