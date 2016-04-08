@@ -23,15 +23,14 @@ from pytz import common_timezones
 from openerp.osv import fields, orm
 
 
-class policy_ot(orm.Model):
-
-    _name = 'hr.policy.ot'
+class HRPolicyOvertime(orm.Model):
+    _name = 'hr.policy.overtime'
 
     _columns = {
-        'name': fields.char('Name', size=128, required=True),
-        'date': fields.date('Effective Date', required=True),
-        'line_ids': fields.one2many(
-            'hr.policy.line.ot', 'policy_id', 'Policy Lines'),
+    name = fields.char('Name', size=128, required=True),
+    date = fields.date('Effective Date', required=True),
+    line_ids = fields.one2many(
+        hr.policy.line.ot', 'policy_id', 'Policy Lines'),
     }
 
     # Return records with latest date first
@@ -82,38 +81,28 @@ class policy_ot(orm.Model):
         ]
 
 
-class policy_line_ot(orm.Model):
-
-    _name = 'hr.policy.line.ot'
-
-    def _tz_list(self, cr, uid, context=None):
-
-        res = tuple()
-        for name in common_timezones:
-            res += ((name, name),)
-        return res
-
-    _columns = {
-        'name': fields.char('Name', size=64, required=True),
-        'policy_id': fields.many2one('hr.policy.ot', 'Policy'),
-        'type': fields.selection([('daily', 'Daily'),
-                                  ('weekly', 'Weekly'),
-                                  ('restday', 'Rest Day'),
-                                  ('holiday', 'Public Holiday')],
-                                 'Type', required=True),
-        'weekly_working_days': fields.integer('Weekly Working Days'),
-        'active_after': fields.integer(
-            'Active After', help="Minutes after which this policy applies"),
-        'active_start_time': fields.char(
-            'Active Start Time', size=5, help="Time in 24 hour time format"),
-        'active_end_time': fields.char(
-            'Active End Time', size=5, help="Time in 24 hour time format"),
-        'tz': fields.selection(_tz_list, 'Time Zone'),
-        'rate': fields.float(
-            'Rate', required=True, help='Multiplier of employee wage.'),
-        'code': fields.char(
-            'Code', required=True, help="Use this code in the salary rules.")
-    }
+class HRPolicyOvertimeLines(orm.Model):
+    _name = 'hr.policy.overtime.lines'
+    
+    name = fields.Char('Name', size=64, required=True)
+    policy_id = fields.Many2one('hr.policy.overtime', 'Policy')
+    type = fields.Selection([('daily', 'Daily'),
+                             ('weekly', 'Weekly'),
+                             ('monthly', 'Monthly'),
+                             ('restday', 'Rest Day'),
+                             ('holiday', 'Public Holiday')],
+           string='Type', required=True)
+    weekly_working_days = fields.Integer('Weekly Working Days')
+    active_after = fields.Integer(
+        string='Active After', help="Minutes after which this policy applies")
+    active_start_time = fields.Char(
+        string='Active Start Time', size=5, help="Time in 24 hour time format")
+    active_end_time = fields.Char(
+        string='Active End Time', size=5, help="Time in 24 hour time format")
+    rate = fields.Float(
+        string='Rate', required=True, help='Multiplier of employee wage.')
+    code = fields.Char(
+        string='Code', required=True, help="Use this code in the salary rules.")
 
 
 class policy_group(orm.Model):
@@ -122,7 +111,7 @@ class policy_group(orm.Model):
     _inherit = 'hr.policy.group'
 
     _columns = {
-        'ot_policy_ids': fields.many2many(
-            'hr.policy.ot', 'hr_policy_group_ot_rel',
-            'group_id', 'ot_id', 'Overtime Policy'),
+    ot_policy_ids = fields.many2many(
+        hr.policy.ot', 'hr_policy_group_ot_rel',
+        group_id', 'ot_id', 'Overtime Policy'),
     }
